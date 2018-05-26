@@ -1,0 +1,34 @@
+#!/bin/sh
+
+tput setaf 8
+
+title () {
+	tput setaf 14
+	tput bold
+	echo $1 | boxes -d shell -a hcvc -s 120
+	tput sgr0
+}
+
+make clean
+make
+
+title "Compiling..."
+find tests/ -name "*.gr8" -print0 | sort -z | parallel --null -k 'tput setaf 11; tput bold; echo "{}"; tput sgr0; ./gr8 -g --target asm_x64 {}'
+
+mkdir -p out
+rm -f out/*
+cd out
+
+title "Assembling..."
+find ../tests/ -name "*.asm_x64" -print0 | sort -z | parallel --null -k 'tput setaf 11; tput bold; echo "{}"; tput sgr0; yasm -felf64 -g dwarf2 {}'
+
+title "Linking..."
+find . -name "*.o" -print0 | sort -z | parallel --null -k 'tput setaf 11; tput bold; echo "{}"; tput sgr0; ld {} -o {.} -L/home/ricardo/compiladores/root/usr/lib -lrts'
+
+title "Running..."
+find . -type f -executable -print0 | sort -z | parallel --null -k 'tput setaf 11; tput bold; echo "{}"; tput sgr0; {} > {}.out; RESULT=$?; if [ $RESULT -ne 0 ]; then echo "Exited with $RESULT"; fi'
+
+title "Diffing..."
+find . -name "*.out" -print0 | sort -z | parallel --null -k 'tput setaf 11; tput bold; echo "{}"; tput sgr0; diff -Z --strip-trailing-cr --color {} "../tests/expected/$(basename {})" | colordiff --color=yes'
+
+cd ..

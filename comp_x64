@@ -1,0 +1,2 @@
+#!/bin/sh
+vim -O tests/$1*.gr8 tests/$1*.asm_x64

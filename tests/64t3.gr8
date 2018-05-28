@@ -1,0 +1,24 @@
+define procedure fun on huge a, small ai, huge b, small bi, huge c, small ci, huge d, small di, huge e, small ei, huge f, small fi, huge g, small gi, huge h, small hi, huge i, small ii as
+  post a
+  post ai
+  post b
+  post bi
+  post c
+  post ci
+  post d
+  post di
+  post e
+  post ei
+  post f
+  post fi
+  post g
+  post gi
+  post h
+  post hi
+  post i
+  post ii
+  return
+
+define public small function covfefe as
+  use 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9 for fun
+  return 0

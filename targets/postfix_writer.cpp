@@ -389,7 +389,10 @@ void gr8::postfix_writer::do_eq_node(cdk::eq_node *const node, int lvl) {
     _pf.INT(0);
   }
 
-  _pf.IEQ();
+  if (node->left()->type()->name() == basic_type::TYPE_POINTER) //then they are both pointers
+    _pf.LEQ();
+  else
+    _pf.IEQ();
 }
 
 void gr8::postfix_writer::do_and_node(cdk::and_node *const node, int lvl) {

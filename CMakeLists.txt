@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-include_directories("." "../libcdk/" "../libcdk/ast" "../libcdk/emitters")
+include_directories(".")
 
 file(GLOB SRC_AST ast/*.h)
 file(GLOB SRC_TARGETS targets/*.cpp)

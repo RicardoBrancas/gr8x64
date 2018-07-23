@@ -46,10 +46,11 @@ void gr8::postfix_writer::do_indexation_node(gr8::indexation_node *const node, i
 
   node->pointer()->accept(this, lvl);                        // $ ADDR
   node->position()->accept(this, lvl);                       // $ ADDR     N_OFFSET
-  _pf.INT((int) node->pointer()->type()->subtype()->size()); // $ ADDR     N_OFFSET    MULTIPLIER
-  _pf.IMUL();                                                // $ ADDR     BYTE_OFFSET
-  _pf.I2L();
-  _pf.LADD();                                                // $ NEW_ADDR
+  _pf.I32((int) node->pointer()->type()->subtype()->size()); // $ ADDR     N_OFFSET    MULTIPLIER
+  _pf.MULI32();                                                // $ ADDR     BYTE_OFFSET
+  _pf.CVI32TIX();
+  _pf.CVIXTI64();
+  _pf.ADDI64();                                                // $ NEW_ADDR
 }
 
 void gr8::postfix_writer::do_address_of_node(gr8::address_of_node *const node, int lvl) {
@@ -77,22 +78,21 @@ void gr8::postfix_writer::do_return_node(gr8::return_node *const node, int lvl) 
 
     if (node->value()->type()->name() == basic_type::TYPE_INT &&
         current_function()->type()->name() == basic_type::TYPE_DOUBLE) {
-      _pf.I2L();
-      _pf.L2D();
-
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
     if (current_function()->type()->name() == basic_type::TYPE_INT)
-      _pf.ISTFVAL();
+      _pf.STFVALI32();
 
     else if (current_function()->type()->name() == basic_type::TYPE_DOUBLE)
-      _pf.DSTFVAL();
+      _pf.STFVALF64();
 
     else if (current_function()->type()->name() == basic_type::TYPE_POINTER ||
              current_function()->type()->name() == basic_type::TYPE_STRING)
-      _pf.LSTFVAL();
+      _pf.STFVALI64();
   }
-  _pf.LEAVE();
-  _pf.RET();
+  _pf.JMP("_END_" + convert_name(current_function()->name()));
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -108,7 +108,7 @@ void gr8::postfix_writer::do_data_node(cdk::data_node *const node, int lvl) {
 //----------------------------------------------------------------------------------------------------------------------
 
 void gr8::postfix_writer::do_integer_node(cdk::integer_node *const node, int lvl) {
-  _pf.INT(node->value()); // push an integer
+  _pf.I32(node->value()); // push an integer
 }
 
 void gr8::postfix_writer::do_string_node(cdk::string_node *const node, int lvl) {
@@ -117,7 +117,7 @@ void gr8::postfix_writer::do_string_node(cdk::string_node *const node, int lvl) 
   _pf.RODATA();
   _pf.ALIGN();
   _pf.LABEL(mklbl(lbl1 = ++_lbl));
-  _pf.STRSTATIC(node->value());
+  _pf.SSTRING(node->value());
 
   _pf.TEXT();
   _pf.ALIGN();
@@ -125,11 +125,11 @@ void gr8::postfix_writer::do_string_node(cdk::string_node *const node, int lvl) 
 }
 
 void gr8::postfix_writer::do_double_node(cdk::double_node *const node, int lvl) {
-  _pf.DOUBLE(node->value());
+  _pf.F64(node->value());
 }
 
 void gr8::postfix_writer::do_null_node(gr8::null_node *const node, int lvl) {
-  _pf.INT(0);
+  _pf.I32(0);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -138,10 +138,10 @@ void gr8::postfix_writer::do_neg_node(cdk::neg_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   node->argument()->accept(this, lvl); // determine the value
   if (node->type()->name() == basic_type::TYPE_INT)
-    _pf.INEG(); // 2-complement
+    _pf.NEGI32(); // 2-complement
 
   else if (node->type()->name() == basic_type::TYPE_DOUBLE)
-    _pf.DNEG();
+    _pf.NEGF64();
 }
 
 void gr8::postfix_writer::do_identity_node(gr8::identity_node *const node, int lvl) {
@@ -154,20 +154,22 @@ void gr8::postfix_writer::do_not_node(cdk::not_node *const node, int lvl) {
 
   int l_else, l_end;
   node->argument()->accept(this, lvl);
-  _pf.IJZ(mklbl(l_else = ++_lbl));
-  _pf.INT(0);
+  _pf.JZI32(mklbl(l_else = ++_lbl));
+  _pf.I32(0);
   _pf.JMP(mklbl(l_end = ++_lbl));
   _pf.LABEL(mklbl(l_else));
-  _pf.INT(1);
+  _pf.I32(1);
   _pf.LABEL(mklbl(l_end));
 }
 
 void gr8::postfix_writer::do_objects_node(gr8::objects_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   node->argument()->accept(this, lvl);
-  _pf.INT((int) node->type()->subtype()->size());
-  _pf.IMUL();
-  _pf.IALLOC();
+  _pf.I32((int) node->type()->subtype()->size());
+  _pf.MULI32();
+  _pf.CVI32TIX();
+  _pf.CVIXTI64();
+  _pf.ALLOC();
   _pf.SP();
 }
 
@@ -179,38 +181,42 @@ void gr8::postfix_writer::do_add_node(cdk::add_node *const node, int lvl) {
   if (node->type()->name() != basic_type::TYPE_POINTER) {
     node->left()->accept(this, lvl);
     if (node->left()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-      _pf.I2L();
-      _pf.L2D();
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
     node->right()->accept(this, lvl);
     if (node->right()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-      _pf.I2L();
-      _pf.L2D();
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
 
     if (node->type()->name() == basic_type::TYPE_INT)
-      _pf.IADD();
+      _pf.ADDI32();
 
     else if (node->type()->name() == basic_type::TYPE_DOUBLE)
-      _pf.DADD();
+      _pf.ADDF64();
 
   } else {
 
     node->left()->accept(this, lvl);
     if (node->left()->type()->name() == basic_type::TYPE_INT) {
-      _pf.INT((int) node->type()->subtype()->size());
-      _pf.IMUL();
-      _pf.I2L();
+      _pf.I32((int) node->type()->subtype()->size());
+      _pf.MULI32();
+      _pf.CVI32TIX();
+      _pf.CVIXTI64();
     }
 
     node->right()->accept(this, lvl);
     if (node->right()->type()->name() == basic_type::TYPE_INT) {
-      _pf.INT((int) node->type()->subtype()->size());
-      _pf.IMUL();
-      _pf.I2L();
+      _pf.I32((int) node->type()->subtype()->size());
+      _pf.MULI32();
+      _pf.CVI32TIX();
+      _pf.CVIXTI64();
     }
 
-    _pf.LADD();
+    _pf.ADDI64();
   }
 }
 
@@ -218,43 +224,47 @@ void gr8::postfix_writer::do_sub_node(cdk::sub_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   node->left()->accept(this, lvl);
   if (node->left()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->right()->accept(this, lvl);
   if (node->right()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
 
   if (node->right()->type()->name() ==
       basic_type::TYPE_POINTER) { // no need to check if left is pointer, as they both must be
     auto label = ++_lbl;
 
-    _pf.LSUB();
-    _pf.LDUP();
-    _pf.LONG(0);
-    _pf.LLT();
-    _pf.LJZ(mklbl(label));
-    _pf.LNEG();
+    _pf.SUBI64();
+    _pf.DUP64();
+    _pf.I64(0);
+    _pf.LTI64();
+    _pf.JZI64(mklbl(label));
+    _pf.NEGI64();
     _pf.LABEL(mklbl(label));
-    _pf.L2I();
-    _pf.INT((int) node->left()->type()->subtype()->size());
-    _pf.IDIV();
+    _pf.CVI64TIX();
+    _pf.CVIXTI32();
+    _pf.I32((int) node->left()->type()->subtype()->size());
+    _pf.DIVI32();
 
   } else {
 
     if (node->type()->name() == basic_type::TYPE_INT)
-      _pf.ISUB();
+      _pf.SUBI32();
 
     else if (node->type()->name() == basic_type::TYPE_DOUBLE)
-      _pf.DSUB();
+      _pf.SUBF64();
 
     else if (node->type()->name() == basic_type::TYPE_POINTER) {
-      _pf.INT((int) node->type()->subtype()->size());
-      _pf.IMUL();
-      _pf.I2L();
-      _pf.LSUB();
+      _pf.I32((int) node->type()->subtype()->size());
+      _pf.MULI32();
+      _pf.CVI32TIX();
+      _pf.CVIXTI64();
+      _pf.SUBI32();
     }
 
   }
@@ -264,47 +274,51 @@ void gr8::postfix_writer::do_mul_node(cdk::mul_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   node->left()->accept(this, lvl);
   if (node->left()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->right()->accept(this, lvl);
   if (node->right()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
 
   if (node->type()->name() == basic_type::TYPE_INT)
-    _pf.IMUL();
+    _pf.MULI32();
 
   else if (node->type()->name() == basic_type::TYPE_DOUBLE)
-    _pf.DMUL();
+    _pf.MULF64();
 }
 
 void gr8::postfix_writer::do_div_node(cdk::div_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   node->left()->accept(this, lvl);
   if (node->left()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->right()->accept(this, lvl);
   if (node->right()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
 
   if (node->type()->name() == basic_type::TYPE_INT)
-    _pf.IDIV();
+    _pf.DIVI32();
 
   else if (node->type()->name() == basic_type::TYPE_DOUBLE)
-    _pf.DDIV();
+    _pf.DIVF64();
 }
 
 void gr8::postfix_writer::do_mod_node(cdk::mod_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   node->left()->accept(this, lvl);
   node->right()->accept(this, lvl);
-  _pf.IMOD();
+  _pf.MODI32();
 }
 
 void gr8::postfix_writer::do_lt_node(cdk::lt_node *const node, int lvl) {
@@ -312,23 +326,26 @@ void gr8::postfix_writer::do_lt_node(cdk::lt_node *const node, int lvl) {
   node->left()->accept(this, lvl);
   if (node->left()->type()->name() == basic_type::TYPE_INT &&
       node->right()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->right()->accept(this, lvl);
   if (node->right()->type()->name() == basic_type::TYPE_INT &&
       node->left()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
 
   if (node->left()->type()->name() == basic_type::TYPE_DOUBLE ||
       node->right()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.DCMP();
-    _pf.L2I();
-    _pf.INT(0);
+    _pf.CMPF64();
+    _pf.CVI64TIX();
+    _pf.CVIXTI32();
+    _pf.I32(0);
   }
-  _pf.ILT();
+  _pf.LTI32();
 }
 
 void gr8::postfix_writer::do_le_node(cdk::le_node *const node, int lvl) {
@@ -344,23 +361,26 @@ void gr8::postfix_writer::do_gt_node(cdk::gt_node *const node, int lvl) {
   node->left()->accept(this, lvl);
   if (node->left()->type()->name() == basic_type::TYPE_INT &&
       node->right()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->right()->accept(this, lvl);
   if (node->right()->type()->name() == basic_type::TYPE_INT &&
       node->left()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
 
   if (node->left()->type()->name() == basic_type::TYPE_DOUBLE ||
       node->right()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.DCMP();
-    _pf.L2I();
-    _pf.INT(0);
+    _pf.CMPF64();
+    _pf.CVI64TIX();
+    _pf.CVIXTI32();
+    _pf.I32(0);
   }
-  _pf.IGT();
+  _pf.GTI32();
 }
 
 void gr8::postfix_writer::do_ne_node(cdk::ne_node *const node, int lvl) {
@@ -372,27 +392,30 @@ void gr8::postfix_writer::do_eq_node(cdk::eq_node *const node, int lvl) {
   node->left()->accept(this, lvl);
   if (node->left()->type()->name() == basic_type::TYPE_INT &&
       node->right()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->right()->accept(this, lvl);
   if (node->right()->type()->name() == basic_type::TYPE_INT &&
       node->left()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
 
   if (node->left()->type()->name() == basic_type::TYPE_DOUBLE ||
       node->right()->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.DCMP();
-    _pf.L2I();
-    _pf.INT(0);
+    _pf.CMPF64();
+    _pf.CVI64TIX();
+    _pf.CVIXTI32();
+    _pf.I32(0);
   }
 
   if (node->left()->type()->name() == basic_type::TYPE_POINTER) //then they are both pointers
-    _pf.LEQ();
+    _pf.EQI64();
   else
-    _pf.IEQ();
+    _pf.EQI32();
 }
 
 void gr8::postfix_writer::do_and_node(cdk::and_node *const node, int lvl) {
@@ -400,10 +423,10 @@ void gr8::postfix_writer::do_and_node(cdk::and_node *const node, int lvl) {
   int l_end = ++_lbl;
 
   node->left()->accept(this, lvl);
-  _pf.IDUP();
-  _pf.IJZ(mklbl(l_end));
+  _pf.DUP32();
+  _pf.JZI32(mklbl(l_end));
   node->right()->accept(this, lvl);
-  _pf.IAND();
+  _pf.AND32();
   _pf.LABEL(mklbl(l_end));
 }
 
@@ -412,10 +435,10 @@ void gr8::postfix_writer::do_or_node(cdk::or_node *const node, int lvl) {
   int l_end;
 
   node->left()->accept(this, lvl);
-  _pf.IDUP();
-  _pf.IJNZ(mklbl(l_end = ++_lbl));
+  _pf.DUP32();
+  _pf.JNZI32(mklbl(l_end = ++_lbl));
   node->right()->accept(this, lvl);
-  _pf.IOR();
+  _pf.OR32();
   _pf.LABEL(mklbl(l_end));
 }
 
@@ -438,16 +461,16 @@ void gr8::postfix_writer::do_rvalue_node(cdk::rvalue_node *const node, int lvl) 
 
   switch (node->type()->name()) {
     case basic_type::TYPE_INT:
-      _pf.ILOAD();
+      _pf.LDI32();
       break;
 
     case basic_type::TYPE_POINTER:
     case basic_type::TYPE_STRING:
-      _pf.LLOAD();
+      _pf.LDI64();
       break;
 
     case basic_type::TYPE_DOUBLE:
-      _pf.DLOAD();
+      _pf.LDF64();
       break;
   }
 }
@@ -456,23 +479,24 @@ void gr8::postfix_writer::do_assignment_node(cdk::assignment_node *const node, i
   ASSERT_SAFE_EXPRESSIONS;
   node->rvalue()->accept(this, lvl); // determine the new value
   if (node->rvalue()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-    _pf.I2L();
-    _pf.L2D();
+    _pf.CVI32TIX();
+    _pf.CVIXTFX();
+    _pf.CVFXTF64();
   }
   node->lvalue()->accept(this, lvl); // determine the address
 
   switch (node->type()->name()) {
     case basic_type::TYPE_INT:
-      _pf.ISTORE();
+      _pf.STI32();
       break;
 
     case basic_type::TYPE_POINTER:
     case basic_type::TYPE_STRING:
-      _pf.LSTORE();
+      _pf.STI64();
       break;
 
     case basic_type::TYPE_DOUBLE:
-      _pf.DSTORE();
+      _pf.STF64();
       break;
   }
 }
@@ -499,6 +523,7 @@ void gr8::postfix_writer::do_function_definition_node(gr8::function_definition_n
 
   node->block()->accept(this, lvl);
 
+  _pf.LABEL("_END_" + convert_name(node->name()));
   _pf.LEAVE();
   _pf.RET();
 
@@ -533,8 +558,9 @@ void gr8::postfix_writer::do_function_call_node(gr8::function_call_node *const n
       (*actual_it)->accept(this, lvl);
       auto actual_expr = dynamic_cast<cdk::expression_node *>(*actual_it);
       if (actual_expr->type()->name() == basic_type::TYPE_INT && (*formal_it)->name() == basic_type::TYPE_DOUBLE) {
-        _pf.I2L();
-        _pf.L2D();
+        _pf.CVI32TIX();
+        _pf.CVIXTFX();
+        _pf.CVFXTF64();
       }
     }
 
@@ -552,16 +578,16 @@ void gr8::postfix_writer::do_function_call_node(gr8::function_call_node *const n
 
   switch (node->type()->name()) {
     case basic_type::TYPE_INT:
-      _pf.ILDFVAL();
+      _pf.LDFVALI32();
       break;
 
     case basic_type::TYPE_POINTER:
     case basic_type::TYPE_STRING:
-      _pf.LLDFVAL();
+      _pf.LDFVALI64();
       break;
 
     case basic_type::TYPE_DOUBLE:
-      _pf.DLDFVAL();
+      _pf.LDFVALF64();
       break;
   }
 }
@@ -580,7 +606,7 @@ void gr8::postfix_writer::do_variable_declaration_node(gr8::variable_declaration
         _pf.DATA();
         _pf.ALIGN();
         _pf.LABEL(node->name());
-        _pf.ISTATIC(initial ? initial->value() : 0);
+        _pf.SI32(initial ? initial->value() : 0);
       }
         break;
 
@@ -589,11 +615,11 @@ void gr8::postfix_writer::do_variable_declaration_node(gr8::variable_declaration
         _pf.ALIGN();
         _pf.LABEL(node->name());
         if (auto initial = dynamic_cast<cdk::double_node *>(node->initial())) {
-          _pf.DSTATIC(initial->value());
+          _pf.SF64(initial->value());
         } else if (auto initial = dynamic_cast<cdk::integer_node *>(node->initial())) {
-          _pf.DSTATIC(initial->value());
+          _pf.SF64(initial->value());
         } else
-          _pf.DSTATIC(0);
+          _pf.SF64(0);
       }
         break;
 
@@ -603,7 +629,7 @@ void gr8::postfix_writer::do_variable_declaration_node(gr8::variable_declaration
         _pf.RODATA();
         _pf.ALIGN();
         _pf.LABEL(mklbl(lbl = ++_lbl));
-        _pf.STRSTATIC(initial ? initial->value() : "");
+        _pf.SSTRING(initial ? initial->value() : "");
         _pf.DATA();
         _pf.ALIGN();
         _pf.LABEL(node->name());
@@ -615,7 +641,7 @@ void gr8::postfix_writer::do_variable_declaration_node(gr8::variable_declaration
         _pf.DATA();
         _pf.ALIGN();
         _pf.LABEL(node->name());
-        _pf.LSTATIC(0);
+        _pf.SI64(0);
         break;
     }
 
@@ -624,17 +650,18 @@ void gr8::postfix_writer::do_variable_declaration_node(gr8::variable_declaration
     if (node->initial() != nullptr) {
       node->initial()->accept(this, lvl);
       if (node->initial()->type()->name() == basic_type::TYPE_INT && node->type()->name() == basic_type::TYPE_DOUBLE) {
-        _pf.I2L();
-        _pf.L2D();
+        _pf.CVI32TIX();
+        _pf.CVIXTFX();
+        _pf.CVFXTF64();
       }
 
       _pf.LOCAL(_symtab.find(node->name())->offset());
       if (node->type()->name() == basic_type::TYPE_INT || node->type()->name() == basic_type::TYPE_STRING ||
           node->type()->name() == basic_type::TYPE_POINTER)
-        _pf.ISTORE();
+        _pf.STI32();
 
       else if (node->type()->name() == basic_type::TYPE_DOUBLE)
-        _pf.DSTORE();
+        _pf.STF64();
     }
   }
 }
@@ -701,12 +728,12 @@ void gr8::postfix_writer::do_read_node(gr8::read_node *const node, int lvl) {
   switch (node->type()->name()) {
     case basic_type::TYPE_INT:
       _pf.CALL("readi");
-      _pf.ILDFVAL();
+      _pf.LDFVALI32();
       break;
 
     case basic_type::TYPE_DOUBLE:
       _pf.CALL("readd");
-      _pf.DLDFVAL();
+      _pf.LDFVALF64();
       break;
   }
 }
@@ -721,74 +748,107 @@ void gr8::postfix_writer::do_sweep_node(gr8::sweep_node *const node, int lvl) {
   _again_labels.push_back(l_incr);
   _stop_labels.push_back(l_end);
 
-  if (node->lvalue()->type()->name() == basic_type::TYPE_INT ||
-      node->lvalue()->type()->name() == basic_type::TYPE_POINTER) {
+  if (node->lvalue()->type()->name() == basic_type::TYPE_INT) {
     node->from()->accept(this, lvl);
     node->lvalue()->accept(this, lvl);
-    _pf.ISTORE();
+    _pf.STI32();
     _pf.LABEL(mklbl(l_test));
     node->to()->accept(this, lvl);         // $ TO
     node->lvalue()->accept(this, lvl);     // $ TO  ADDR
-    _pf.ILOAD();                           // $ TO [ADDR]
-    _pf.ISUB();                             // $ TO-[ADDR]
+    _pf.LDI32();                           // $ TO [ADDR]
+    _pf.SUBI32();                             // $ TO-[ADDR]
     node->by()->accept(this, lvl);         // $ TO-[ADDR] BY
-    _pf.IMUL();                             // $ (TO-[ADDR])*BY
-    _pf.INT(0);                            // $ (TO-[ADDR])*BY 0
-    _pf.IJLT(mklbl(l_end));                 // JMP if (TO-[ADDR])*BY > 0
+    _pf.MULI32();                             // $ (TO-[ADDR])*BY
+    _pf.I32(0);                            // $ (TO-[ADDR])*BY 0
+    _pf.JLTI32(mklbl(l_end));                 // JMP if (TO-[ADDR])*BY > 0
     node->block()->accept(this, lvl + 2);
     _pf.LABEL(mklbl(l_incr));
     node->lvalue()->accept(this, lvl);     // $  ADDR
-    _pf.ILOAD();                           // $ [ADDR]
+    _pf.LDI32();                           // $ [ADDR]
     node->by()->accept(this, lvl);         // $ [ADDR] BY
     if (node->lvalue()->type()->name() == basic_type::TYPE_POINTER) {
-      _pf.INT((int) node->lvalue()->type()->subtype()->size());
-      _pf.IMUL();
+      _pf.I32((int) node->lvalue()->type()->subtype()->size());
+      _pf.MULI32();
     }
-    _pf.IADD();                             // $ [ADDR]+BY
+    _pf.ADDI32();                             // $ [ADDR]+BY
     node->lvalue()->accept(this, lvl);     // $ [ADDR]+BY ADDR
-    _pf.ISTORE();                           // ADDR = [ADDR]+BY
+    _pf.STI32();                           // ADDR = [ADDR]+BY
+    _pf.JMP(mklbl(l_test));
+    _pf.LABEL(mklbl(l_end));
+
+  } else if (node->lvalue()->type()->name() == basic_type::TYPE_POINTER) {
+    node->from()->accept(this, lvl);
+    node->lvalue()->accept(this, lvl);
+    _pf.STI64();
+    _pf.LABEL(mklbl(l_test));
+    node->to()->accept(this, lvl);         // $ TO
+    node->lvalue()->accept(this, lvl);     // $ TO  ADDR
+    _pf.LDI64();                           // $ TO [ADDR]
+    _pf.SUBI64();                             // $ TO-[ADDR]
+    node->by()->accept(this, lvl);         // $ TO-[ADDR] BY
+    _pf.CVI32TIX();
+    _pf.CVIXTI64();
+    _pf.MULI64();                             // $ (TO-[ADDR])*BY
+    _pf.I64(0);                            // $ (TO-[ADDR])*BY 0
+    _pf.JLTI64(mklbl(l_end));                 // JMP if (TO-[ADDR])*BY > 0
+    node->block()->accept(this, lvl + 2);
+    _pf.LABEL(mklbl(l_incr));
+    node->lvalue()->accept(this, lvl);     // $  ADDR
+    _pf.LDI64();                           // $ [ADDR]
+    node->by()->accept(this, lvl);         // $ [ADDR] BY
+    _pf.I32((int) node->lvalue()->type()->subtype()->size());
+    _pf.MULI32();
+    _pf.CVI32TIX();
+    _pf.CVIXTI64();
+    _pf.ADDI64();                             // $ [ADDR]+BY
+    node->lvalue()->accept(this, lvl);     // $ [ADDR]+BY ADDR
+    _pf.STI64();                           // ADDR = [ADDR]+BY
     _pf.JMP(mklbl(l_test));
     _pf.LABEL(mklbl(l_end));
 
   } else if (node->lvalue()->type()->name() == basic_type::TYPE_DOUBLE) {
     node->from()->accept(this, lvl);
     if (node->from()->type()->name() == basic_type::TYPE_INT) {
-      _pf.I2L();
-      _pf.L2D();
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
     node->lvalue()->accept(this, lvl);
-    _pf.DSTORE();
+    _pf.STF64();
     _pf.LABEL(mklbl(l_test));
     node->to()->accept(this, lvl);         // $ TO
     if (node->to()->type()->name() == basic_type::TYPE_INT) {
-      _pf.I2L();
-      _pf.L2D();
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
     node->lvalue()->accept(this, lvl);     // $ TO  ADDR
-    _pf.DLOAD();                        // $ TO [ADDR]
-    _pf.DSUB();                            // $ TO-[ADDR]
+    _pf.LDF64();                        // $ TO [ADDR]
+    _pf.SUBF64();                            // $ TO-[ADDR]
     node->by()->accept(this, lvl);         // $ TO-[ADDR] BY
     if (node->by()->type()->name() == basic_type::TYPE_INT) {
-      _pf.I2L();
-      _pf.L2D();
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
-    _pf.DMUL();                            // $ (TO-[ADDR])*BY
-    _pf.DOUBLE(0);                         // $ (TO-[ADDR])*BY 0
-    _pf.DCMP();
-    _pf.INT(0);
-    _pf.IJLT(mklbl(l_end));                 // JMP if (TO-[ADDR])*BY > 0
+    _pf.MULF64();                            // $ (TO-[ADDR])*BY
+    _pf.F64(0);                         // $ (TO-[ADDR])*BY 0
+    _pf.CMPF64();
+    _pf.I32(0);
+    _pf.JLTI32(mklbl(l_end));                 // JMP if (TO-[ADDR])*BY > 0
     node->block()->accept(this, lvl + 2);
     _pf.LABEL(mklbl(l_incr));
     node->lvalue()->accept(this, lvl);     // $  ADDR
-    _pf.DLOAD();                        // $ [ADDR]
+    _pf.LDF64();                        // $ [ADDR]
     node->by()->accept(this, lvl);         // $ [ADDR] BY
     if (node->by()->type()->name() == basic_type::TYPE_INT) {
-      _pf.I2L();
-      _pf.L2D();
+      _pf.CVI32TIX();
+      _pf.CVIXTFX();
+      _pf.CVFXTF64();
     }
-    _pf.DADD();                            // $ [ADDR]+BY
+    _pf.ADDF64();                            // $ [ADDR]+BY
     node->lvalue()->accept(this, lvl);     // $ [ADDR]+BY ADDR
-    _pf.DSTORE();                        // ADDR = [ADDR]+BY
+    _pf.STF64();                        // ADDR = [ADDR]+BY
     _pf.JMP(mklbl(l_test));
     _pf.LABEL(mklbl(l_end));
   }
@@ -803,7 +863,7 @@ void gr8::postfix_writer::do_if_node(gr8::if_node *const node, int lvl) {
   ASSERT_SAFE_EXPRESSIONS;
   int l_end;
   node->condition()->accept(this, lvl);
-  _pf.IJZ(mklbl(l_end = ++_lbl));
+  _pf.JZI32(mklbl(l_end = ++_lbl));
   node->block()->accept(this, lvl + 2);
   _pf.LABEL(mklbl(l_end));
 }
@@ -814,7 +874,7 @@ void gr8::postfix_writer::do_if_else_node(gr8::if_else_node *const node, int lvl
   ASSERT_SAFE_EXPRESSIONS;
   int l_else, l_end;
   node->condition()->accept(this, lvl);
-  _pf.IJZ(mklbl(l_else = ++_lbl));
+  _pf.JZI32(mklbl(l_else = ++_lbl));
   node->thenblock()->accept(this, lvl + 2);
   _pf.JMP(mklbl(l_end = ++_lbl));
   _pf.LABEL(mklbl(l_else));
